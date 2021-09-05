@@ -1,0 +1,333 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="mapGame.css">
+</head>
+<body>
+
+<div id="controlPanel">
+    <label id="label_question_number">Number of questions:
+        <input type="number" id="input_question_number" value="10">
+        <input type="button" onclick="start()" value="Start">
+    </label>
+    <span id="result"></span>
+</div>
+<div>
+    <span id="question">Question:</span>
+    <input id="button_skip" type="button" onclick="skip()" value="Skip" hidden>
+</div>
+
+<div id="container"></div>
+<script type="text/javascript"
+        src="https://webapi.amap.com/maps?v=1.4.15&key=8b0cef412b5aaee2860851f796efe1c8&plugin=Map3D,AMap.DistrictLayer,AMap.Scale,AMap.DistrictSearch"></script>
+
+<script type="text/javascript">
+    const country = "100000";
+    const specialCities = new Set([
+        "110000", // 北京
+        "120000", // 天津
+        "310000", // 上海
+        "500000", // 重庆
+        "710000", // 台湾
+        "810000", // 香港
+        "820000"  // 澳门
+    ]);
+    const level = "city";
+
+    // Performance
+    let total;
+    let answered;
+    let skipped;
+    let correct;
+    let incorrect;
+
+    // For target comparison
+    let target;
+    let targetMessage = "";
+    let ready = false;
+
+    // Clicked History
+    let visited;
+
+    // Local IndexedDB cache
+    let db;
+
+    window.onload = function () {
+        let request = window.indexedDB.open('mapGame', 1);
+
+        // onerror handler signifies that the database didn't open successfully
+        request.onerror = function () {
+            console.log('Database failed to open');
+        };
+
+        // onsuccess handler signifies that the database opened successfully
+        request.onsuccess = function () {
+            console.log('Database opened successfully');
+
+            // Store the opened database object in the db variable. This is used a lot below
+            db = request.result;
+        };
+
+        // Setup the database tables if this has not already been done
+        request.onupgradeneeded = function (e) {
+            // Grab a reference to the opened database
+            db = e.target.result;
+
+            // Create an objectStore to store our notes in (basically like a single table)
+            // including a auto-incrementing key
+            db.createObjectStore('mapGame_children', {keyPath: 'adcode'});
+            db.createObjectStore('mapGame_boundary', {keyPath: 'adcode'});
+
+            // // Define what data items the objectStore will contain
+            // objectStore.createIndex('title', 'title', { unique: false });
+            // objectStore.createIndex('body', 'body', { unique: false });
+
+            console.log('Database setup complete');
+        };
+    }
+
+    const subDistrictOpts = {
+        subdistrict: 1,   //返回下一级行政区
+        showbiz: false  //最后一级返回街道信息
+    };
+    const subDistrict = new AMap.DistrictSearch(subDistrictOpts);//注意：需要使用插件同步下发功能才能这样直接使用
+
+    const boundaryOpts = {
+        subdistrict: 0,   //返回下一级行政区
+        extensions: 'all',  //返回行政区边界坐标组等具体信息
+        level: level
+    };
+    const boundary = new AMap.DistrictSearch(boundaryOpts);//注意：需要使用插件同步下发功能才能这样直接使用
+
+    function start() {
+        total = document.getElementById("input_question_number").value;
+        answered = 0;
+        skipped = 0;
+        correct = 0;
+        incorrect = 0;
+        visited = new Set();
+        refreshStatistics();
+
+        showQuestion();
+
+        map.clearMap();
+    }
+
+    function skip() {
+        ready = false;
+        skipped++;
+        refreshStatistics();
+        showQuestion();
+    }
+
+    function showQuestion() {
+        if (answered + skipped < total) {
+            ready = false;
+            document.getElementById("question").innerText = "Question: Loading...";
+            document.getElementById("button_skip").hidden = true;
+            targetMessage = "";
+            setQuestion(country, level);
+        }
+    }
+
+    function setQuestion(adcode, level) {
+        const readRequest = db.transaction(["mapGame_children"], "readonly")
+            .objectStore("mapGame_children")
+            .get(adcode);
+
+        readRequest.onerror = function (event) {
+            console.error(event);
+        };
+
+        readRequest.onsuccess = function (event) {
+            const data = event.target.result;
+
+            if (data) {
+                console.log("Children cache hit: " + adcode);
+                processQuestion(data);
+            } else {
+                console.log("Children cache miss: " + adcode);
+                subDistrict.search(adcode, function (status, result) {
+                    if (status === 'complete') {
+                        const newData = result.districtList[0];
+                        console.log(newData);
+                        const temp = db.transaction(["mapGame_children"], "readwrite")
+                            .objectStore("mapGame_children")
+                            .put(newData);
+                        temp.onerror = (event => console.error(event));
+                        processQuestion(newData);
+                    }
+                });
+            }
+        };
+
+        const processQuestion = function (data) {
+            console.log(data);
+            const subDistricts = data.districtList;
+            const index = Math.floor(Math.random() * subDistricts.length);
+            const subDistrict = subDistricts[index];
+
+            targetMessage = targetMessage === "" ? subDistrict.name : targetMessage + " - " + subDistrict.name;
+
+            if (level === subDistrict.level || level === "city" && specialCities.has(subDistrict.adcode)) {
+                if (visited.has(subDistrict.adcode)) {
+                    showQuestion();
+                } else {
+                    target = subDistrict;
+                    document.getElementById("question").innerText = "Please click: " + targetMessage;
+                    document.getElementById("button_skip").hidden = false;
+                    ready = true;
+                    console.log(targetMessage);
+                }
+            } else {
+                setQuestion(subDistrict.adcode, level);
+            }
+        }
+    }
+
+    function refreshStatistics() {
+        const score = `Total: ${total}, answered: ${answered}, skipped: ${skipped}, correct: ${correct}, incorrect: ${incorrect}`;
+        document.getElementById("result").innerText = score;
+        if (answered + skipped == total) {
+            document.getElementById("question").innerText = "All question done";
+            document.getElementById("button_skip").hidden = true;
+        }
+    }
+
+    function markResult(adcode, color) {
+        const readRequest = db.transaction(["mapGame_boundary"], "readonly")
+            .objectStore("mapGame_boundary")
+            .get(adcode);
+
+        readRequest.onerror = function (event) {
+            console.error(event);
+        };
+
+        readRequest.onsuccess = function (event) {
+            const data = event.target.result;
+
+            if (data) {
+                console.log("Boundary cache hit: " + adcode);
+                processMark(data);
+            } else {
+                console.log("Boundary cache miss: " + adcode);
+                boundary.search(adcode, function (status, result) {
+                    if (status === 'complete') {
+                        const center = [result.districtList[0].center['lng'], result.districtList[0].center['lat']];
+                        const paths = result.districtList[0].boundaries
+                            .map(boundary => boundary.map(
+                                location => [location['lng'], location['lat']]
+                            ));
+                        const newData = {
+                            adcode: adcode,
+                            name: result.districtList[0].name,
+                            center: center,
+                            paths: paths
+                        };
+
+                        const temp = db.transaction(["mapGame_boundary"], "readwrite")
+                            .objectStore("mapGame_boundary")
+                            .put(newData);
+                        temp.onerror = (event => console.error(event));
+                        processMark(newData);
+                    }
+                });
+            }
+        };
+
+        const processMark = function (data) {
+            console.log(data);
+            const paths = data.paths;
+            polygons = [];
+            if (paths) {
+                for (var i = 0, l = paths.length; i < l; i++) {
+                    //生成行政区划polygon
+                    var polygon = new AMap.Polygon({
+                        strokeWeight: 1,
+                        path: paths[i],
+                        fillOpacity: 0.2,
+                        fillColor: color,
+                        strokeColor: '#DDDDDD'
+                    });
+                    polygons.push(polygon);
+                }
+            }
+            map.add(polygons);
+
+            //setTimeout(() => {map.clearMap(); console.log("cleared"); setTimeout(() => {map.add(polygons); console.log("readded")}, 3000);}, 3000);
+
+            const text = new AMap.Text({
+                text: data.name,
+                anchor: 'center', // 设置文本标记锚点
+                draggable: false,
+                cursor: 'default',
+                angle: 0,
+                style: {
+                    'border-width': 0,
+                    'font-size': '12px',
+                    'color': color
+                },
+                position: data.center
+            });
+
+            text.setMap(map);
+        }
+    }
+
+    const disCountry = new AMap.DistrictLayer.Country({
+        zIndex: 10,
+        SOC: 'CHN',
+        depth: 2,
+        styles: {
+            'nation-stroke': 'black',
+            'coastline-stroke': 'aqua',
+            'province-stroke': '#404040',
+            'city-stroke': '#DDDDDD',
+            'county-stroke': "black",
+            'stroke-width': 3
+        }
+    })
+
+    const map = new AMap.Map('container', {
+        zooms: [3, 10],
+        showIndoorMap: false,
+        zoom: 3,
+        isHotspot: false,
+        defaultCursor: 'default',
+        touchZoomCenter: 1,
+        pitch: 0,
+        layers: [
+            disCountry,
+        ],
+        resizeEnable: true
+    });
+
+    map.on('click', function (ev) {
+        if (ready) {
+            const px = ev.pixel;
+            // 拾取所在位置的行政区
+            const result = disCountry.getDistrictByContainerPos(px);
+
+            console.log(result);
+
+            visited.add(result.adcode.toString());
+
+            if (result.adcode.toString() === target.adcode) {
+                ready = false;
+                correct++;
+                answered++;
+                refreshStatistics();
+                showQuestion();
+                markResult(result.adcode.toString(), "green");
+            } else {
+                incorrect++;
+                refreshStatistics();
+                markResult(result.adcode.toString(), "red");
+            }
+        }
+    });
+
+</script>
+</body>
+</html>
