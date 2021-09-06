@@ -149,7 +149,7 @@
     function showQuestion() {
       if (answered + skipped < total) {
         ready = false;
-        document.getElementById("question").innerText = "Question: Loading...";
+        document.getElementById("question").innerText = "加载中...";
         document.getElementById("button_skip").hidden = true;
         targetMessage = "";
         setQuestion(country, level);
