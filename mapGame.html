@@ -9,18 +9,18 @@
 <body>
   <div id="panel">
     <div id="controlPanel">
-      <label id="label_questionNumber">Number of questions:
+      <label id="label_questionNumber">题目数目:
         <input type="number" id="input_questionNumber" value="10">
-        <input type="button" id="button_start" onclick="start()" value="Start">
+        <input type="button" id="button_start" onclick="start()" value="开始">
       </label>
     </div>
     <div id="resultPanel">
-      <div>Time: <span id="time"></span></div>
-      <div>Result: <span id="result"></span></div>
+      <div>耗时: <span id="time"></span></div>
+      <div>成绩: <span id="result"></span></div>
     </div>
     <div id="questionPannel">
-      <span>Question: <span id="question"></span></span>
-      <input id="button_skip" type="button" onclick="skip()" value="Skip" hidden>
+      <span>题目: <span id="question"></span></span>
+      <input id="button_skip" type="button" onclick="skip()" value="跳过" hidden>
     </div>
   </div>
   <div id="container"></div>
@@ -118,7 +118,7 @@
       if (startTime && ready) {
         const currentTime = new Date().getTime();
         const time = Math.round((currentTime - startTime) / 1000);
-        document.getElementById("time").innerHTML = time;
+        document.getElementById("time").innerHTML = time + "秒";
       }
 
       setTimeout(() => refreshTime(), 250);
@@ -200,7 +200,7 @@
             showQuestion();
           } else {
             target = subDistrict;
-            document.getElementById("question").innerText = "Please click: " + targetMessage;
+            document.getElementById("question").innerText = "请点击: " + targetMessage;
             document.getElementById("button_skip").hidden = false;
             ready = true;
             console.log(targetMessage);
@@ -212,10 +212,10 @@
     }
 
     function refreshStatistics() {
-      const score = `Total: ${total}, answered: ${answered}, skipped: ${skipped}, correct: ${correct}, incorrect: ${incorrect}`;
+      const score = `总数: ${total}, 通过: ${answered}, 跳过: ${skipped}, 正确: ${correct}, 错误: ${incorrect}`;
       document.getElementById("result").innerText = score;
       if (answered + skipped == total) {
-        document.getElementById("question").innerText = "All question done";
+        document.getElementById("question").innerText = "答题结束";
         document.getElementById("button_skip").hidden = true;
       }
     }
